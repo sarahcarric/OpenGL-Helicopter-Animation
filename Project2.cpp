@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <time.h>
+
 #include "heli.550"
 
 #define _USE_MATH_DEFINES
@@ -99,6 +101,11 @@ enum ButtonVals
 	RESET,
 	QUIT
 };
+enum viewPos
+{
+	OUTSIDE,
+	INSIDE
+};
 
 // window background color (rgba):
 
@@ -161,7 +168,7 @@ const float	WHITE[ ] = { 1.,1.,1.,1. };
 
 const int MS_PER_CYCLE = 10000;		// 10000 milliseconds = 10 seconds
 
-
+#define MS_IN_THE_ANIMATION_CYCLE	10000
 // what options should we compile-in?
 // in general, you don't need to worry about these
 // i compile these in to show class examples of things going wrong
@@ -174,7 +181,8 @@ const int MS_PER_CYCLE = 10000;		// 10000 milliseconds = 10 seconds
 int		ActiveButton;			// current button that is down
 GLuint	AxesList;				// list to hold the axes
 int		AxesOn;					// != 0 means to draw the axes
-GLuint	BoxList;				// object display list
+GLuint	HeliList;				// object display list
+GLuint 	BladeList;
 int		DebugOn;				// != 0 means to print debugging info
 int		DepthCueOn;				// != 0 means to use intensity depth cueing
 int		DepthBufferOn;			// != 0 means to use the z-buffer
@@ -187,7 +195,8 @@ int		ShadowsOn;				// != 0 means to turn shadows on
 float	Time;					// used for animation, this has a value between 0. and 1.
 int		Xmouse, Ymouse;			// mouse values
 float	Xrot, Yrot;				// rotation angles in degrees
-
+float BladeAngle = 0.;
+GLuint viewPoint;
 
 // function prototypes:
 
@@ -330,12 +339,11 @@ Animate( )
 {
 	// put animation stuff in here -- change some global variables for Display( ) to find:
 
-	int ms = glutGet(GLUT_ELAPSED_TIME);
-	ms %= MS_PER_CYCLE;							// makes the value of ms between 0 and MS_PER_CYCLE-1
-	Time = (float)ms / (float)MS_PER_CYCLE;		// makes the value of Time between 0. and slightly less than 1.
-
 	// for example, if you wanted to spin an object in Display( ), you might call: glRotatef( 360.f*Time,   0., 1., 0. );
-
+int ms = glutGet( GLUT_ELAPSED_TIME );	// milliseconds
+ms  %=  MS_IN_THE_ANIMATION_CYCLE;
+Time = (float)ms  /  (float)MS_IN_THE_ANIMATION_CYCLE;    
+BladeAngle += 10;
 	// force a call to Display( ) next time it is convenient:
 
 	glutSetWindow( MainWindow );
@@ -395,6 +403,30 @@ Display( )
 	glMatrixMode( GL_MODELVIEW );
 	glLoadIdentity( );
 
+	if (viewPoint == OUTSIDE)
+	{
+		// set the eye position, look-at position, and up-vector:
+
+		gluLookAt(0., 0., 10., 0., 0., 0., 0., 1., 0.);
+
+
+		// rotate the scene:
+
+		glRotatef((GLfloat)Yrot, 0., 1., 0.);
+		glRotatef((GLfloat)Xrot, 1., 0., 0.);
+
+
+		// uniformly scale the scene:
+
+		if (Scale < MINSCALE)
+			Scale = MINSCALE;
+		glScalef((GLfloat)Scale, (GLfloat)Scale, (GLfloat)Scale);
+	}
+	else if (viewPoint == INSIDE)
+	{
+		gluLookAt(-0.4, 1.8, -4.9, -0.4, 1.8, -5, 0., 1., 0.);
+	}
+
 	// set the eye position, look-at position, and up-vector:
 
 	gluLookAt( 0.f, 0.f, 3.f,     0.f, 0.f, 0.f,     0.f, 1.f, 0.f );
@@ -437,18 +469,18 @@ Display( )
 	// since we are using glScalef( ), be sure the normals get unitized:
 
 	glEnable( GL_NORMALIZE );
-
+	
 
 	// draw the box object by calling up its display list:
 
-	glCallList( BoxList );
+	glCallList( HeliList );
 
 #ifdef DEMO_Z_FIGHTING
 	if( DepthFightingOn != 0 )
 	{
 		glPushMatrix( );
 			glRotatef( 90.f,   0.f, 1.f, 0.f );
-			glCallList( BoxList );
+			glCallList( HeliList );
 		glPopMatrix( );
 	}
 #endif
@@ -474,13 +506,30 @@ Display( )
 	// the modelview matrix is reset to identity as we don't
 	// want to transform these coordinates
 
+glPushMatrix();
+	glTranslatef(0., 3.0, -1.8);
+	glRotatef(BladeAngle, 0., 1., 0.);
+	glScalef(7.0, 1.2, 1.);
+	glRotatef(90., 1., 0., 0.);
+	glCallList( BladeList );
+	glPopMatrix();
+
+
+	glPushMatrix();
+	glTranslatef(0.5, 2.5, 8.9);
+	glRotatef(BladeAngle * 5, 1, 0., 0.);
+	glScalef(.5, 1., 1.5);
+	glRotatef(90., 0., 3., 0.);
+	glCallList(BladeList);
+	
+	glPopMatrix();
 	glDisable( GL_DEPTH_TEST );
 	glMatrixMode( GL_PROJECTION );
 	glLoadIdentity( );
-	gluOrtho2D( 0.f, 100.f,     0.f, 100.f );
+	gluOrtho2D( 0.f, 200.f,     0.f, 150.f );
 	glMatrixMode( GL_MODELVIEW );
 	glLoadIdentity( );
-	glColor3f( 1.f, 1.f, 1.f );
+	glColor3f( 1.f, 0.f, 1.f );
 	//DoRasterString( 5.f, 5.f, 0.f, (char *)"Text That Doesn't" );
 
 	// swap the double-buffered framebuffers:
@@ -583,6 +632,14 @@ DoMainMenu( int id )
 	glutPostRedisplay( );
 }
 
+void
+ViewMenu(int id)
+{
+	viewPoint = id;
+
+	glutSetWindow(MainWindow);
+	glutPostRedisplay();
+}
 
 void
 DoProjectMenu( int id )
@@ -674,6 +731,10 @@ InitMenus( )
 	int depthfightingmenu = glutCreateMenu( DoDepthFightingMenu );
 	glutAddMenuEntry( "Off",  0 );
 	glutAddMenuEntry( "On",   1 );
+
+	int lookpmenu = glutCreateMenu( ViewMenu );
+	glutAddMenuEntry("Outside", OUTSIDE);
+	glutAddMenuEntry("Inside", INSIDE);
 
 	int debugmenu = glutCreateMenu( DoDebugMenu );
 	glutAddMenuEntry( "Off",  0 );
@@ -820,57 +881,54 @@ InitLists( )
 	glutSetWindow( MainWindow );
 
 	// create the object:
+HeliList = glGenLists( 1 );
+glNewList( HeliList, GL_COMPILE );
+int i;
+struct edge *ep;
+struct point *p0, *p1;
 
-	BoxList = glGenLists( 1 );
-	glNewList( BoxList, GL_COMPILE );
+glPushMatrix( );
+glTranslatef( 0., -1., 0. );
+glRotatef(  97.,   0., 1., 0. );
+glRotatef( -15.,   0., 0., 1. );
+glBegin( GL_LINES );
+	for( i=0, ep = Heliedges; i < Helinedges; i++, ep++ )
+	{
+		p0 = &Helipoints[ ep->p0 ];
+		p1 = &Helipoints[ ep->p1 ];
+		glVertex3f( p0->x, p0->y, p0->z );
+		glVertex3f( p1->x, p1->y, p1->z );
+	}
+glEnd( );
+glPopMatrix( );
+glPushMatrix();
+	glTranslatef(0., 0., -10.);
+	glColor3f(1., 1., 0.);
+	glutWireTorus(0.5, 3.5, 20, 50);
+	glPopMatrix();
 
-		glBegin( GL_QUADS );
+glEndList( );
 
-			glColor3f( 1., 0., 0. );
+// blade parameters:
 
-				glNormal3f( 1., 0., 0. );
-					glVertex3f(  dx, -dy,  dz );
-					glVertex3f(  dx, -dy, -dz );
-					glVertex3f(  dx,  dy, -dz );
-					glVertex3f(  dx,  dy,  dz );
+#define BLADE_RADIUS		 1.0
+#define BLADE_WIDTH		 0.4
 
-				glNormal3f(-1., 0., 0.);
-					glVertex3f( -dx, -dy,  dz);
-					glVertex3f( -dx,  dy,  dz );
-					glVertex3f( -dx,  dy, -dz );
-					glVertex3f( -dx, -dy, -dz );
+// draw the helicopter blade with radius BLADE_RADIUS and
+//	width BLADE_WIDTH centered at (0.,0.,0.) in the XY plane
+srand(time(NULL));
+BladeList = glGenLists( 1 );
+glNewList( BladeList, GL_COMPILE );
+glBegin( GL_TRIANGLES );
+	glVertex2f(  BLADE_RADIUS,  BLADE_WIDTH/2. );
+	glVertex2f(  0., 0. );
+	glVertex2f(  BLADE_RADIUS, -BLADE_WIDTH/2. );
 
-			glColor3f( 0., 1., 0. );
-
-				glNormal3f(0., 1., 0.);
-					glVertex3f( -dx,  dy,  dz );
-					glVertex3f(  dx,  dy,  dz );
-					glVertex3f(  dx,  dy, -dz );
-					glVertex3f( -dx,  dy, -dz );
-
-				glNormal3f(0., -1., 0.);
-					glVertex3f( -dx, -dy,  dz);
-					glVertex3f( -dx, -dy, -dz );
-					glVertex3f(  dx, -dy, -dz );
-					glVertex3f(  dx, -dy,  dz );
-
-			glColor3f(0., 0., 1.);
-
-				glNormal3f(0., 0., 1.);
-					glVertex3f(-dx, -dy, dz);
-					glVertex3f( dx, -dy, dz);
-					glVertex3f( dx,  dy, dz);
-					glVertex3f(-dx,  dy, dz);
-
-				glNormal3f(0., 0., -1.);
-					glVertex3f(-dx, -dy, -dz);
-					glVertex3f(-dx,  dy, -dz);
-					glVertex3f( dx,  dy, -dz);
-					glVertex3f( dx, -dy, -dz);
-
-		glEnd( );
-
-	glEndList( );
+	glVertex2f( -BLADE_RADIUS, -BLADE_WIDTH/2. );
+	glVertex2f(  0., 0. );
+	glVertex2f( -BLADE_RADIUS,  BLADE_WIDTH/2. );
+glEnd( );
+glEndList( );
 
 
 	// create the axes:
